@@ -20,6 +20,11 @@ public class BraceCheckerTests {
     public void testInvalid2() {
         assertFalse(checker.isValid("(})"));
     }
+
+    @Test
+    public void testInvalid3() {
+        assertFalse(checker.isValid(")(}{]["));
+    }
 }
 
 

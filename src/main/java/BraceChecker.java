@@ -1,4 +1,6 @@
+import javax.swing.text.html.Option;
 import java.util.Optional;
+import java.util.Set;
 import java.util.Stack;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BinaryOperator;
@@ -10,7 +12,10 @@ public class BraceChecker {
     private static final Character CURLY_CLOSER = '}';
     private static final Character SQUARE_OPENER = '[';
     private static final Character SQUARE_CLOSER = ']';
-    public static final Stack<Character> openedBraces = new Stack<>();
+    public static final Set<ParenthesesTuple> PARENTHES_TUPLE_SET = Set.of(
+            new ParenthesesTuple(NORMAL_OPENER, NORMAL_CLOSER),
+            new ParenthesesTuple(CURLY_OPENER, CURLY_CLOSER),
+            new ParenthesesTuple(SQUARE_OPENER, SQUARE_CLOSER));
 
     public boolean isValid(String parens) {
         BinaryOperator<SolutionContext> noOperator = (ctx1, ctx2) -> {
@@ -25,63 +30,65 @@ public class BraceChecker {
         return Optional.ofNullable(context).filter(SolutionContext::isValid).isPresent();
     }
 
-    record SolutionContext(AtomicReference<Integer> normalCounter,
-                           AtomicReference<Integer> curlyCounter,
-                           AtomicReference<Integer> squareCounter,
+    record SolutionContext(Stack<Character> openedBraces,
                            AtomicReference<Boolean> shouldFail) {
         boolean isValid() {
-            return normalCounter.get().equals(0) &&
-                    curlyCounter.get().equals(0) &&
-                    squareCounter.get().equals(0) &&
+            return openedBraces.isEmpty() &&
                     shouldFail.get().equals(false);
         }
 
         public static SolutionContext initial() {
-            return new SolutionContext(new AtomicReference<>(0),
-                    new AtomicReference<>(0),
-                    new AtomicReference<>(0),
+            return new SolutionContext(new Stack<>(),
                     new AtomicReference<>(false));
         }
 
         public SolutionContext processCharacter(SolutionContext context, Character character) {
-            if (character.equals(NORMAL_OPENER)) {
-                context.normalCounter.getAndSet(context.normalCounter.get() + 1);
-                openedBraces.push(character);
-
-            } else if (character.equals(NORMAL_CLOSER) && openedBraces.peek().equals(NORMAL_OPENER)) {
-                context.normalCounter.getAndSet(context.normalCounter.get() - 1);
-                openedBraces.pop();
-                if (context.normalCounter.get().equals(-1)) {
-                    context.shouldFail.set(true);
-                }
+            if (isAnOpener(character)) {
+                context.openedBraces.push(character);
+                return new SolutionContext(context.openedBraces, context.shouldFail);
+            } else if (isACloserPairedWithCurrentOpener(character)) {
+                return closeParenthesesIfPossible(context);
+            } else if (isACloser(character)) {
+                context.shouldFail.set(true);
+                return new SolutionContext(context.openedBraces, context.shouldFail);
             }
-
-            if (character.equals(CURLY_OPENER)) {
-                context.curlyCounter.getAndSet(context.curlyCounter.get() + 1);
-                openedBraces.push(character);
-            } else if (character.equals(CURLY_CLOSER) && openedBraces.peek().equals(CURLY_OPENER)) {
-                context.curlyCounter.getAndSet(context.curlyCounter.get() - 1);
-                openedBraces.pop();
-                if (context.curlyCounter.get().equals(-1)) {
-                    context.shouldFail.set(true);
-                }
-            }
-
-            if (character.equals(SQUARE_OPENER)) {
-                context.squareCounter.getAndSet(context.squareCounter.get() + 1);
-                openedBraces.push(character);
-            } else if (character.equals(SQUARE_CLOSER) && openedBraces.peek().equals(SQUARE_OPENER)) {
-                context.squareCounter.getAndSet(context.squareCounter.get() - 1);
-                openedBraces.pop();
-                if (context.squareCounter.get().equals(-1)) {
-                    context.shouldFail.set(true);
-                }
-            }
-            return new SolutionContext(context.normalCounter,
-                    context.curlyCounter,
-                    context.squareCounter,
-                    context.shouldFail);
+            return new SolutionContext(context.openedBraces, context.shouldFail);
         }
+
+        private SolutionContext closeParenthesesIfPossible(SolutionContext context) {
+            return Optional.of(context)
+                    .filter(ctx -> !ctx.openedBraces.isEmpty())
+                    .map(ctx -> {
+                                ctx.openedBraces.pop();
+                                return new SolutionContext(ctx.openedBraces, ctx.shouldFail);
+                            }
+                    )
+                    .orElse(new SolutionContext(context.openedBraces, new AtomicReference<>(true)));
+        }
+
+        private boolean isACloserPairedWithCurrentOpener(Character character) {
+            return isACloser(character) && isPairedWithCurrentOpener(character);
+        }
+
+        private boolean isPairedWithCurrentOpener(Character character) {
+            return PARENTHES_TUPLE_SET.stream()
+                    .filter(t -> t.closer.equals(character))
+                    .filter(t -> !openedBraces.empty())
+                    .anyMatch(t -> openedBraces.peek().equals(t.opener));
+        }
+
+        private boolean isAnOpener(Character character) {
+            return PARENTHES_TUPLE_SET.stream()
+                    .anyMatch(t -> t.opener.equals(character));
+        }
+
+        private boolean isACloser(Character character) {
+            return PARENTHES_TUPLE_SET.stream()
+                    .anyMatch(t -> t.closer.equals(character));
+        }
+    }
+
+    record ParenthesesTuple(Character opener, Character closer) {
     }
 }
 
